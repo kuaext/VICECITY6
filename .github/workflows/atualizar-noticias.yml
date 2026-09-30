@@ -368,14 +368,18 @@ URL: ${item.link}
               }
             }
 
-            const refreshedOld = [];
-            for (const n of old) {
-              try {
-                const image = await getNewsImage(n.link, n.title, n.source);
-                refreshedOld.push({ ...n, image: image || '' });
-              } catch (err) {
-                refreshedOld.push({ ...n, image: '' });
-              }
+            // Mantém as imagens já escolhidas no portal para evitar que a atualização
+            // automática troque várias matérias por uma mesma imagem genérica.
+            const refreshedOld = old.map(n => ({ ...n }));
+
+            // Para notícias novas, evita repetir uma imagem que já está em uso.
+            const usedImages = new Set(
+              refreshedOld.map(n => (n.image || '').trim()).filter(Boolean)
+            );
+            for (const n of fresh) {
+              const img = (n.image || '').trim();
+              if (img && usedImages.has(img)) n.image = '';
+              else if (img) usedImages.add(img);
             }
 
             const combined = [...fresh, ...refreshedOld];
