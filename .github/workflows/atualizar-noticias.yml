@@ -29,7 +29,7 @@ jobs:
               const u = new URL(url);
               const req = https.get(u, {
                 headers: {
-                  'User-Agent': 'Mozilla/5.0 (compatible; GTA6-Noticias-Bot/3.0)',
+                  'User-Agent': 'Mozilla/5.0 (compatible; GTA6-Noticias-Bot/4.0)',
                   'Accept': accept
                 }
               }, res => {
@@ -46,24 +46,99 @@ jobs:
             });
           }
 
-          function extractImage(html = '') {
+          function absoluteUrl(value, baseUrl) {
+            if (!value) return '';
+            try { return new URL(value, baseUrl).toString(); } catch { return ''; }
+          }
+
+          function extractMeta(html = '', key) {
             const patterns = [
-              /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i,
-              /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i,
-              /<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i,
-              /<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image["']/i
+              new RegExp('<meta[^>]+property=["\\']' + key + '["\\'][^>]+content=["\\']([^"\\']+)["\\']', 'i'),
+              new RegExp('<meta[^>]+content=["\\']([^"\\']+)["\\'][^>]+property=["\\']' + key + '["\\']', 'i'),
+              new RegExp('<meta[^>]+name=["\\']' + key + '["\\'][^>]+content=["\\']([^"\\']+)["\\']', 'i'),
+              new RegExp('<meta[^>]+content=["\\']([^"\\']+)["\\'][^>]+name=["\\']' + key + '["\\']', 'i')
             ];
             for (const p of patterns) {
               const m = html.match(p);
-              if (m && m[1]) return m[1].replace(/&amp;/g, '&');
+              if (m && m[1]) return m[1].replace(/&amp;/g, '&').trim();
             }
             return '';
           }
 
-          async function getNewsImage(url) {
+          function extractImage(html = '', pageUrl = '') {
+            const value =
+              extractMeta(html, 'og:image') ||
+              extractMeta(html, 'twitter:image') ||
+              extractMeta(html, 'twitter:image:src');
+            return absoluteUrl(value, pageUrl);
+          }
+
+          function normalize(s = '') {
+            return s.toLowerCase()
+              .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+              .replace(/[^a-z0-9]+/g, ' ')
+              .trim();
+          }
+
+          function imageRelevance(imageUrl, pageTitle, ogTitle, ogDescription, source) {
+            const all = normalize([imageUrl, pageTitle, ogTitle, ogDescription, source].join(' '));
+            const url = normalize(imageUrl);
+
+            // Imagens que quase sempre são logos, avatares, ícones ou imagens genéricas.
+            const bad = [
+              'logo','favicon','avatar','author','profile','icon','sprite','placeholder',
+              'default image','default-image','no-image','noimage','thumbnail-default',
+              'facebook','twitter icon','youtube icon','instagram','generic','site-header'
+            ];
+            if (bad.some(x => url.includes(normalize(x)))) return 0;
+
+            // O artigo precisa ter contexto GTA/Grand Theft Auto.
+            const gtaWords = [
+              'gta 6','gta vi','gta6','gtavi','grand theft auto vi',
+              'grand theft auto 6','rockstar games','vice city','lucia','jason'
+            ];
+            const hasGtaContext = gtaWords.some(x => all.includes(normalize(x)));
+            if (!hasGtaContext) return 0;
+
+            let score = 1;
+            const relevant = [
+              'gta','gta6','gtavi','gta vi','grand theft auto','rockstar',
+              'vice city','lucia','jason','leonida','rockstargames'
+            ];
+            for (const word of relevant) {
+              if (url.includes(normalize(word))) score += 2;
+            }
+
+            // Se a própria página identifica a imagem com GTA/VI/Rockstar, damos prioridade.
+            if (normalize(ogTitle).includes('gta') || normalize(ogTitle).includes('grand theft auto')) score += 3;
+            if (normalize(ogDescription).includes('gta 6') || normalize(ogDescription).includes('gta vi')) score += 2;
+
+            // Evita imagens claramente de assuntos diferentes.
+            const unrelated = [
+              'politica','politico','futebol','soccer','receita','culinaria','moda',
+              'economia','eleicao','eleicoes','celebridade','musica','iphone','android',
+              'bitcoin','mercado','carro','automovel','clima','tempo','horoscopo'
+            ];
+            if (unrelated.some(x => url.includes(normalize(x)))) return 0;
+
+            return score;
+          }
+
+          async function getNewsImage(url, title = '', source = '') {
             try {
               const html = await get(url, 'text/html,application/xhtml+xml');
-              return extractImage(html);
+              const image = extractImage(html, url);
+              const ogTitle = extractMeta(html, 'og:title');
+              const ogDescription = extractMeta(html, 'og:description') || extractMeta(html, 'description');
+              const score = imageRelevance(image, title, ogTitle, ogDescription, source);
+
+              if (!image || score < 2) {
+                console.log('Imagem rejeitada por baixa relevância:', image || '(sem imagem)', 'score=', score);
+                return '';
+              }
+
+              console.log('Imagem aprovada:', image, 'score=', score);
+              return image;
             } catch (e) {
               console.log('Imagem não encontrada:', e.message);
               return '';
@@ -98,8 +173,8 @@ jobs:
 
           function clean(s = '') {
             return s
-              .replace(/<!\[CDATA\[/g, '')
-              .replace(/\]\]>/g, '')
+              .replace(/<!\\[CDATA\\[/g, '')
+              .replace(/\\]\\]>/g, '')
               .replace(/<[^>]+>/g, ' ')
               .replace(/&amp;/g, '&')
               .replace(/&quot;/g, '"')
@@ -107,12 +182,12 @@ jobs:
               .replace(/&apos;/g, "'")
               .replace(/&lt;/g, '<')
               .replace(/&gt;/g, '>')
-              .replace(/\s+/g, ' ')
+              .replace(/\\s+/g, ' ')
               .trim();
           }
 
           function field(item, name) {
-            const m = item.match(new RegExp('<' + name + '(?:\\s[^>]*)?>([\\s\\S]*?)</' + name + '>'));
+            const m = item.match(new RegExp('<' + name + '(?:\\\\s[^>]*)?>([\\s\\S]*?)</' + name + '>'));
             return clean(m ? m[1] : '');
           }
 
@@ -171,7 +246,7 @@ URL: ${item.link}
                 .join('');
             }
 
-            output = output.trim().replace(/^\u0060\u0060\u0060json\s*/i, '').replace(/^\u0060\u0060\u0060\s*/i, '').replace(/\s*\u0060\u0060\u0060$/i, '');
+            output = output.trim().replace(/^\\u0060\\u0060\\u0060json\\s*/i, '').replace(/^\\u0060\\u0060\\u0060\\s*/i, '').replace(/\\s*\\u0060\\u0060\\u0060$/i, '');
             const ai = JSON.parse(output);
 
             if (!['OFICIAL', 'RUMOR', 'NOVIDADE'].includes(ai.tag)) ai.tag = fallbackTag(item.title);
@@ -195,7 +270,7 @@ URL: ${item.link}
           async function main() {
             const rssUrl = 'https://news.google.com/rss/search?q=GTA%206%20when%3A7d&hl=pt-BR&gl=BR&ceid=BR%3Apt-419';
             const xml = await get(rssUrl);
-            const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].map(m => m[1]);
+            const items = [...xml.matchAll(/<item>([\\s\\S]*?)<\\/item>/g)].map(m => m[1]);
 
             const rawNews = items.map(item => ({
               title: field(item, 'title'),
@@ -219,7 +294,7 @@ URL: ${item.link}
                   description: item.description,
                   link: item.link
                 });
-                const image = await getNewsImage(item.link);
+                const image = await getNewsImage(item.link, item.title, item.source);
                 fresh.push({
                   tag: ai.tag,
                   title: ai.title,
@@ -239,7 +314,7 @@ URL: ${item.link}
                   source: item.source,
                   date: item.pubDate,
                   link: item.link,
-                  image: await getNewsImage(item.link)
+                  image: await getNewsImage(item.link, item.title, item.source)
                 });
               }
             }
@@ -247,10 +322,10 @@ URL: ${item.link}
             const refreshedOld = [];
             for (const n of old) {
               try {
-                const image = await getNewsImage(n.link);
-                refreshedOld.push({ ...n, image: image || n.image || '' });
+                const image = await getNewsImage(n.link, n.title, n.source);
+                refreshedOld.push({ ...n, image: image || '' });
               } catch (err) {
-                refreshedOld.push(n);
+                refreshedOld.push({ ...n, image: '' });
               }
             }
 
@@ -263,7 +338,6 @@ URL: ${item.link}
               return true;
             }).slice(0, 30);
 
-            // Atualiza também as imagens das notícias antigas usando a imagem OG/Twitter da própria fonte.
             fs.writeFileSync('data/news.json', JSON.stringify(unique, null, 2));
             console.log(`Novas notícias: ${fresh.length}. Total publicado: ${unique.length}.`);
           }
@@ -281,5 +355,5 @@ URL: ${item.link}
           git config user.name "GTA 6 Notícias Bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data/news.json
-          git diff --cached --quiet || git commit -m "IA: gerar títulos, resumos e categorias"
+          git diff --cached --quiet || git commit -m "IA: filtrar imagens irrelevantes de GTA 6"
           git push
