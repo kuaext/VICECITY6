@@ -65,12 +65,61 @@ jobs:
             return '';
           }
 
-          function extractImage(html = '', pageUrl = '') {
-            const value =
+          function extractImage(html = '', pageUrl = '', articleTitle = '') {
+            const candidates = [];
+
+            const metaImage =
               extractMeta(html, 'og:image') ||
               extractMeta(html, 'twitter:image') ||
               extractMeta(html, 'twitter:image:src');
-            return absoluteUrl(value, pageUrl);
+            if (metaImage) candidates.push({ url: absoluteUrl(metaImage, pageUrl), text: '' });
+
+            // Procura imagens reais do artigo e usa ALT/TITLE/CAPTION para relacioná-las ao assunto.
+            const imgRe = /<img\\b[^>]*>/gi;
+            for (const tag of html.match(imgRe) || []) {
+              const src =
+                (tag.match(/\\bsrc=["']([^"']+)["']/i) || [,''])[1] ||
+                (tag.match(/\\bdata-src=["']([^"']+)["']/i) || [,''])[1] ||
+                (tag.match(/\\bdata-lazy-src=["']([^"']+)["']/i) || [,''])[1];
+              if (!src) continue;
+              const alt = (tag.match(/\\balt=["']([^"']*)["']/i) || [,''])[1];
+              const title = (tag.match(/\\btitle=["']([^"']*)["']/i) || [,''])[1];
+              candidates.push({ url: absoluteUrl(src, pageUrl), text: alt + ' ' + title });
+            }
+
+            const titleWords = normalize(articleTitle).split(/\\s+/).filter(w => w.length >= 4);
+            const gtaWords = ['gta','gta6','gtavi','rockstar','vice','city','lucia','jason','leonida','grand','theft','auto'];
+            const badWords = ['logo','avatar','favicon','icon','sprite','banner','advert','ads','placeholder','author','profile'];
+
+            let best = '';
+            let bestScore = -1;
+
+            for (const item of candidates) {
+              const u = normalize(item.url);
+              const meta = normalize(item.text + ' ' + item.url);
+              if (!item.url || badWords.some(w => u.includes(w))) continue;
+
+              let score = 0;
+              for (const word of titleWords) {
+                if (meta.includes(word)) score += 4;
+              }
+              for (const word of gtaWords) {
+                if (meta.includes(word)) score += 2;
+              }
+
+              // OG image é preferida quando não há outra imagem claramente mais relacionada.
+              if (item.url === absoluteUrl(metaImage, pageUrl)) score += 3;
+
+              // Imagens muito pequenas/ícones normalmente não são boas fotos de notícia.
+              if (/\\b(?:1x1|pixel|tiny|small|icon)\\b/.test(u)) score -= 8;
+
+              if (score > bestScore) {
+                bestScore = score;
+                best = item.url;
+              }
+            }
+
+            return best;
           }
 
           function normalize(s = '') {
@@ -127,7 +176,7 @@ jobs:
           async function getNewsImage(url, title = '', source = '') {
             try {
               const html = await get(url, 'text/html,application/xhtml+xml');
-              const image = extractImage(html, url);
+              const image = extractImage(html, url, title);
               const ogTitle = extractMeta(html, 'og:title');
               const ogDescription = extractMeta(html, 'og:description') || extractMeta(html, 'description');
               const score = imageRelevance(image, title, ogTitle, ogDescription, source);
