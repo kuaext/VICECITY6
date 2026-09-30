@@ -244,7 +244,17 @@ URL: ${item.link}
               }
             }
 
-            const combined = [...fresh, ...old];
+            const refreshedOld = [];
+            for (const n of old) {
+              try {
+                const image = await getNewsImage(n.link);
+                refreshedOld.push({ ...n, image: image || n.image || '' });
+              } catch (err) {
+                refreshedOld.push(n);
+              }
+            }
+
+            const combined = [...fresh, ...refreshedOld];
             const seen = new Set();
             const unique = combined.filter(n => {
               const key = (n.link || n.title || '').toLowerCase().trim();
@@ -253,7 +263,7 @@ URL: ${item.link}
               return true;
             }).slice(0, 30);
 
-            // Mantém imagens antigas e adiciona a imagem oficial/OG da fonte para cada notícia nova.
+            // Atualiza também as imagens das notícias antigas usando a imagem OG/Twitter da própria fonte.
             fs.writeFileSync('data/news.json', JSON.stringify(unique, null, 2));
             console.log(`Novas notícias: ${fresh.length}. Total publicado: ${unique.length}.`);
           }
