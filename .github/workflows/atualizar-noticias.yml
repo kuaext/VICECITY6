@@ -23,19 +23,51 @@ jobs:
           const fs = require('fs');
           const https = require('https');
 
-          function get(url) {
+          function get(url, accept = '*/*', redirects = 0) {
             return new Promise((resolve, reject) => {
-              https.get(url, {
+              if (redirects > 5) return reject(new Error('Muitos redirecionamentos'));
+              const u = new URL(url);
+              const req = https.get(u, {
                 headers: {
-                  'User-Agent': 'GTA6-Noticias/2.0',
-                  'Accept': 'application/rss+xml, application/xml, text/xml'
+                  'User-Agent': 'Mozilla/5.0 (compatible; GTA6-Noticias-Bot/3.0)',
+                  'Accept': accept
                 }
               }, res => {
+                if ([301,302,303,307,308].includes(res.statusCode) && res.headers.location) {
+                  res.resume();
+                  const next = new URL(res.headers.location, url).toString();
+                  return get(next, accept, redirects + 1).then(resolve).catch(reject);
+                }
                 let data = '';
                 res.on('data', c => data += c);
                 res.on('end', () => resolve(data));
-              }).on('error', reject);
+              });
+              req.on('error', reject);
             });
+          }
+
+          function extractImage(html = '') {
+            const patterns = [
+              /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i,
+              /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i,
+              /<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i,
+              /<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image["']/i
+            ];
+            for (const p of patterns) {
+              const m = html.match(p);
+              if (m && m[1]) return m[1].replace(/&amp;/g, '&');
+            }
+            return '';
+          }
+
+          async function getNewsImage(url) {
+            try {
+              const html = await get(url, 'text/html,application/xhtml+xml');
+              return extractImage(html);
+            } catch (e) {
+              console.log('Imagem não encontrada:', e.message);
+              return '';
+            }
           }
 
           function post(url, body, headers = {}) {
@@ -187,13 +219,15 @@ URL: ${item.link}
                   description: item.description,
                   link: item.link
                 });
+                const image = await getNewsImage(item.link);
                 fresh.push({
                   tag: ai.tag,
                   title: ai.title,
                   text: ai.text,
                   source: item.source,
                   date: item.pubDate,
-                  link: item.link
+                  link: item.link,
+                  image
                 });
                 console.log('IA:', ai.tag, ai.title);
               } catch (err) {
@@ -204,7 +238,8 @@ URL: ${item.link}
                   text: 'Notícia encontrada automaticamente. Abra a fonte original para conferir todos os detalhes.',
                   source: item.source,
                   date: item.pubDate,
-                  link: item.link
+                  link: item.link,
+                  image: await getNewsImage(item.link)
                 });
               }
             }
@@ -218,6 +253,7 @@ URL: ${item.link}
               return true;
             }).slice(0, 30);
 
+            // Mantém imagens antigas e adiciona a imagem oficial/OG da fonte para cada notícia nova.
             fs.writeFileSync('data/news.json', JSON.stringify(unique, null, 2));
             console.log(`Novas notícias: ${fresh.length}. Total publicado: ${unique.length}.`);
           }
