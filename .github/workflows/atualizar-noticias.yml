@@ -1,4 +1,4 @@
-name: Atualizar notícias GTA 6
+name: Atualizar notícias GTA 6 com IA
 
 on:
   schedule:
@@ -15,71 +15,225 @@ jobs:
       - name: Baixar site
         uses: actions/checkout@v4
 
-      - name: Buscar notícias
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const https = require('https');
+      - name: Buscar notícias e gerar conteúdo com IA
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          cat > /tmp/update_news.js <<'NODE'
+          const fs = require('fs');
+          const https = require('https');
 
-            function get(url) {
-              return new Promise((resolve, reject) => {
-                https.get(url, {headers:{'User-Agent':'GTA6-Noticias/1.0'}}, res => {
-                  let data='';
-                  res.on('data', c => data += c);
-                  res.on('end', () => resolve(data));
-                }).on('error', reject);
+          function get(url) {
+            return new Promise((resolve, reject) => {
+              https.get(url, {
+                headers: {
+                  'User-Agent': 'GTA6-Noticias/2.0',
+                  'Accept': 'application/rss+xml, application/xml, text/xml'
+                }
+              }, res => {
+                let data = '';
+                res.on('data', c => data += c);
+                res.on('end', () => resolve(data));
+              }).on('error', reject);
+            });
+          }
+
+          function post(url, body, headers = {}) {
+            return new Promise((resolve, reject) => {
+              const u = new URL(url);
+              const req = https.request({
+                hostname: u.hostname,
+                path: u.pathname + u.search,
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Content-Length': Buffer.byteLength(body),
+                  ...headers
+                }
+              }, res => {
+                let data = '';
+                res.on('data', c => data += c);
+                res.on('end', () => {
+                  if (res.statusCode >= 200 && res.statusCode < 300) resolve(data);
+                  else reject(new Error(`HTTP ${res.statusCode}: ${data.slice(0, 1000)}`));
+                });
               });
-            }
+              req.on('error', reject);
+              req.write(body);
+              req.end();
+            });
+          }
 
-            function clean(s='') {
-              return s.replace(/<!\[CDATA\[/g,'').replace(/\]\]>/g,'')
-                .replace(/<[^>]+>/g,' ').replace(/&amp;/g,'&')
-                .replace(/&quot;/g,'"').replace(/&#39;/g,"'")
-                .replace(/&apos;/g,"'").replace(/&lt;/g,'<')
-                .replace(/&gt;/g,'>').replace(/\\s+/g,' ').trim();
-            }
+          function clean(s = '') {
+            return s
+              .replace(/<!\[CDATA\[/g, '')
+              .replace(/\]\]>/g, '')
+              .replace(/<[^>]+>/g, ' ')
+              .replace(/&amp;/g, '&')
+              .replace(/&quot;/g, '"')
+              .replace(/&#39;/g, "'")
+              .replace(/&apos;/g, "'")
+              .replace(/&lt;/g, '<')
+              .replace(/&gt;/g, '>')
+              .replace(/\s+/g, ' ')
+              .trim();
+          }
 
-            const url = 'https://news.google.com/rss/search?q=GTA%206%20when%3A7d&hl=pt-BR&gl=BR&ceid=BR%3Apt-419';
-            const xml = await get(url);
-            const items = [...xml.matchAll(/<item>([\\s\\S]*?)<\\/item>/g)].map(m => m[1]);
+          function field(item, name) {
+            const m = item.match(new RegExp('<' + name + '(?:\\s[^>]*)?>([\\s\\S]*?)</' + name + '>'));
+            return clean(m ? m[1] : '');
+          }
 
-            const news = items.map(item => {
-              const title = clean((item.match(/<title>([\\s\\S]*?)<\\/title>/)||[])[1] || '');
-              const link = clean((item.match(/<link>([\\s\\S]*?)<\\/link>/)||[])[1] || '');
-              const pubDate = clean((item.match(/<pubDate>([\\s\\S]*?)<\\/pubDate>/)||[])[1] || '');
-              const source = clean((item.match(/<source[^>]*>([\\s\\S]*?)<\\/source>/)||[])[1] || 'Google News');
-              if (!title || !link) return null;
+          async function generateAI(item) {
+            const prompt = `
+Você é o editor de um portal brasileiro independente sobre GTA 6.
+Analise a notícia abaixo e produza conteúdo jornalístico curto, claro e factual.
 
-              const t = title.toLowerCase();
-              let tag = 'NOVIDADE';
-              if (t.includes('rockstar') || t.includes('oficial') || t.includes('confirm')) tag = 'OFICIAL';
-              if (t.includes('rumor') || t.includes('suposto') || t.includes('vazamento') || t.includes('leak')) tag = 'RUMOR';
+REGRAS:
+- Não invente fatos.
+- Não transforme rumor em confirmação.
+- Se a notícia for rumor, vazamento ou especulação, classifique como RUMOR.
+- Se houver confirmação explícita da Rockstar Games ou de fonte oficial, classifique como OFICIAL.
+- Caso contrário, use NOVIDADE.
+- Crie um título em português do Brasil, atraente mas sem clickbait enganoso.
+- Crie um resumo de 2 frases, baseado somente nas informações fornecidas.
+- Retorne SOMENTE JSON válido neste formato:
+{"title":"...","text":"...","tag":"OFICIAL|RUMOR|NOVIDADE"}
 
+Notícia:
+Título original: ${item.title}
+Fonte: ${item.source}
+Data: ${item.date}
+Descrição: ${item.description || '(não fornecida)'}
+URL: ${item.link}
+`;
+
+            if (!process.env.OPENAI_API_KEY) {
               return {
-                tag, title,
-                text: 'Notícia encontrada automaticamente. Abra a fonte para ler a matéria completa e conferir os detalhes.',
-                source,
-                date: pubDate,
-                link
+                title: item.title,
+                text: 'Notícia encontrada automaticamente. Abra a fonte original para conferir todos os detalhes.',
+                tag: fallbackTag(item.title)
               };
-            }).filter(Boolean);
+            }
 
-            const old = JSON.parse(fs.readFileSync('data/news.json','utf8'));
-            const combined = [...news, ...old];
+            const body = JSON.stringify({
+              model: 'gpt-5.6-luna',
+              input: prompt,
+              store: false
+            });
+
+            const raw = await post(
+              'https://api.openai.com/v1/responses',
+              body,
+              { 'Authorization': 'Bearer ' + process.env.OPENAI_API_KEY }
+            );
+
+            const data = JSON.parse(raw);
+            let output = data.output_text || '';
+
+            if (!output && Array.isArray(data.output)) {
+              output = data.output
+                .flatMap(x => x.content || [])
+                .filter(x => x.type === 'output_text')
+                .map(x => x.text)
+                .join('');
+            }
+
+            output = output.trim().replace(/^\u0060\u0060\u0060json\s*/i, '').replace(/^\u0060\u0060\u0060\s*/i, '').replace(/\s*\u0060\u0060\u0060$/i, '');
+            const ai = JSON.parse(output);
+
+            if (!['OFICIAL', 'RUMOR', 'NOVIDADE'].includes(ai.tag)) ai.tag = fallbackTag(item.title);
+            if (!ai.title) ai.title = item.title;
+            if (!ai.text) ai.text = 'Notícia encontrada automaticamente. Abra a fonte original para conferir todos os detalhes.';
+
+            return {
+              title: String(ai.title).slice(0, 180),
+              text: String(ai.text).slice(0, 500),
+              tag: ai.tag
+            };
+          }
+
+          function fallbackTag(title = '') {
+            const t = title.toLowerCase();
+            if (t.includes('rumor') || t.includes('suposto') || t.includes('vazamento') || t.includes('leak')) return 'RUMOR';
+            if (t.includes('rockstar') || t.includes('oficial') || t.includes('confirm')) return 'OFICIAL';
+            return 'NOVIDADE';
+          }
+
+          async function main() {
+            const rssUrl = 'https://news.google.com/rss/search?q=GTA%206%20when%3A7d&hl=pt-BR&gl=BR&ceid=BR%3Apt-419';
+            const xml = await get(rssUrl);
+            const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].map(m => m[1]);
+
+            const rawNews = items.map(item => ({
+              title: field(item, 'title'),
+              link: field(item, 'link'),
+              pubDate: field(item, 'pubDate'),
+              source: field(item, 'source') || 'Google News',
+              description: field(item, 'description')
+            })).filter(n => n.title && n.link);
+
+            const old = JSON.parse(fs.readFileSync('data/news.json', 'utf8'));
+            const existing = new Set(old.map(n => (n.link || '').trim()));
+
+            const fresh = [];
+            for (const item of rawNews) {
+              if (existing.has(item.link)) continue;
+              try {
+                const ai = await generateAI({
+                  title: item.title,
+                  source: item.source,
+                  date: item.pubDate,
+                  description: item.description,
+                  link: item.link
+                });
+                fresh.push({
+                  tag: ai.tag,
+                  title: ai.title,
+                  text: ai.text,
+                  source: item.source,
+                  date: item.pubDate,
+                  link: item.link
+                });
+                console.log('IA:', ai.tag, ai.title);
+              } catch (err) {
+                console.log('IA falhou, usando fallback:', err.message);
+                fresh.push({
+                  tag: fallbackTag(item.title),
+                  title: item.title,
+                  text: 'Notícia encontrada automaticamente. Abra a fonte original para conferir todos os detalhes.',
+                  source: item.source,
+                  date: item.pubDate,
+                  link: item.link
+                });
+              }
+            }
+
+            const combined = [...fresh, ...old];
             const seen = new Set();
             const unique = combined.filter(n => {
-              const key = (n.title || '').toLowerCase().replace(/\\W/g,'');
+              const key = (n.link || n.title || '').toLowerCase().trim();
               if (!key || seen.has(key)) return false;
-              seen.add(key); return true;
+              seen.add(key);
+              return true;
             }).slice(0, 30);
 
             fs.writeFileSync('data/news.json', JSON.stringify(unique, null, 2));
+            console.log(`Novas notícias: ${fresh.length}. Total publicado: ${unique.length}.`);
+          }
 
-      - name: Atualizar site
+          main().catch(err => {
+            console.error(err);
+            process.exit(1);
+          });
+          NODE
+
+          node /tmp/update_news.js
+
+      - name: Publicar alterações
         run: |
           git config user.name "GTA 6 Notícias Bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data/news.json
-          git diff --cached --quiet || git commit -m "Atualizar notícias automaticamente"
+          git diff --cached --quiet || git commit -m "IA: gerar títulos, resumos e categorias"
           git push
