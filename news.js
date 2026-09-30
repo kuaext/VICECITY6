@@ -6,6 +6,7 @@ const guides = [
 ];
 
 let allNews=[];
+let refreshTimer=null;
 let tickerTimer=null;
 
 function updateTicker(){
@@ -28,13 +29,15 @@ function setupTicker(){
   });
 }
 
-async function loadNews(){
+async function loadNews(scroll=false){
   const el=document.getElementById("news");
   try{
     const r=await fetch("data/news.json?"+Date.now());
     allNews=await r.json();
     updateTicker();
     render("all");
+    updateTicker();
+    if(scroll) window.scrollTo({top:0,behavior:"smooth"});
   }catch(e){
     el.innerHTML='<p>Não foi possível carregar as notícias agora.</p>';
   }
@@ -101,3 +104,5 @@ document.addEventListener("click",e=>{
 
 setupTicker();
 loadNews();
+// Verifica o arquivo publicado a cada 5 minutos e atualiza o portal sem recarregar a página.
+refreshTimer=setInterval(()=>loadNews(false),5*60*1000);
