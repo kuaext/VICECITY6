@@ -6,12 +6,34 @@ const guides = [
 ];
 
 let allNews=[];
+let tickerTimer=null;
+
+function updateTicker(){
+  const el=document.getElementById("ticker");
+  if(!el||!allNews.length)return;
+  const items=allNews.slice(0,10).map(n=>{
+    const tag=n.tag||"NOVIDADE";
+    return '<span>'+escapeHtml(tag)+' — '+escapeHtml(n.title)+'</span>';
+  });
+  el.innerHTML=items.join("");
+}
+
+function setupTicker(){
+  const btn=document.getElementById("tickerPause");
+  const ticker=document.getElementById("ticker");
+  if(!btn||!ticker)return;
+  btn.addEventListener("click",()=>{
+    ticker.classList.toggle("ticker-paused");
+    btn.textContent=ticker.classList.contains("ticker-paused")?"▶":"Ⅱ";
+  });
+}
 
 async function loadNews(){
   const el=document.getElementById("news");
   try{
     const r=await fetch("data/news.json?"+Date.now());
     allNews=await r.json();
+    updateTicker();
     render("all");
   }catch(e){
     el.innerHTML='<p>Não foi possível carregar as notícias agora.</p>';
@@ -77,4 +99,5 @@ document.addEventListener("click",e=>{
   document.getElementById("ultimas").scrollIntoView({behavior:"smooth",block:"start"});
 });
 
+setupTicker();
 loadNews();
