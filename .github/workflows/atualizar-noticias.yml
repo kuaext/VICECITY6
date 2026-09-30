@@ -173,8 +173,8 @@ jobs:
 
           function clean(s = '') {
             return s
-              .replace(/<!\\[CDATA\\[/g, '')
-              .replace(/\\]\\]>/g, '')
+              .replace(/<!\[CDATA\[/g, '')
+              .replace(/\]\]>/g, '')
               .replace(/<[^>]+>/g, ' ')
               .replace(/&amp;/g, '&')
               .replace(/&quot;/g, '"')
@@ -182,12 +182,12 @@ jobs:
               .replace(/&apos;/g, "'")
               .replace(/&lt;/g, '<')
               .replace(/&gt;/g, '>')
-              .replace(/\\s+/g, ' ')
+              .replace(/\s+/g, ' ')
               .trim();
           }
 
           function field(item, name) {
-            const m = item.match(new RegExp('<' + name + '(?:\\\\s[^>]*)?>([\\s\\S]*?)</' + name + '>'));
+            const m = item.match(new RegExp('<' + name + '(?:\\s[^>]*)?>([\\s\\S]*?)</' + name + '>'));
             return clean(m ? m[1] : '');
           }
 
