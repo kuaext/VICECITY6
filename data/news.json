@@ -1,10 +1,56 @@
 [
   {
-    "tag":"OFICIAL",
-    "title":"GTA 6 chega em 19 de novembro de 2026",
-    "text":"A Rockstar anunciou GTA VI para PlayStation 5 e Xbox Series X|S.",
-    "source":"Rockstar Games",
-    "date":"2026-09-30",
-    "link":"https://www.rockstargames.com/VI"
+    "tag": "OFICIAL",
+    "title": "GTA 6 chega em 19 de novembro de 2026",
+    "text": "A Rockstar confirma o lançamento de Grand Theft Auto VI para PlayStation 5 e Xbox Series X|S em 19 de novembro de 2026.",
+    "source": "Rockstar Games",
+    "date": "2026-09-30",
+    "link": "https://www.rockstargames.com/VI",
+    "image": "https://cms.gta6state.com/api/media/file/gta-6-official-4k-jason-lucia-01-1600x900.webp"
+  },
+  {
+    "tag": "OFICIAL",
+    "title": "Rockstar divulga um olhar estendido de GTA 6",
+    "text": "O vídeo Extended Look, lançado em 27 de agosto de 2026, mostra cenas capturadas diretamente do jogo no PlayStation 5.",
+    "source": "Rockstar Games",
+    "date": "2026-08-27",
+    "link": "https://www.rockstargames.com/VI/an-extended-look",
+    "image": "https://cms.gta6state.com/api/media/file/gta-6-official-4k-lucia-caminos-07.webp"
+  },
+  {
+    "tag": "OFICIAL",
+    "title": "GTA 6 já pode ser reservado",
+    "text": "A Rockstar abriu as pré-vendas de Grand Theft Auto VI em junho de 2026 e publicou informações sobre as edições e bônus de reserva.",
+    "source": "Rockstar Games",
+    "date": "2026-06-25",
+    "link": "https://www.rockstargames.com/VI/editions",
+    "image": "https://cms.gta6state.com/api/media/file/gta-6-official-4k-jason-lucia-01-1600x900.webp"
+  },
+  {
+    "tag": "OFICIAL",
+    "title": "Rockstar revela a arte oficial de GTA 6",
+    "text": "A arte oficial de capa de Grand Theft Auto VI foi divulgada pela Rockstar em junho de 2026, apresentando personagens e elementos de Leonida.",
+    "source": "Rockstar Games",
+    "date": "2026-06-18",
+    "link": "https://www.rockstargames.com/VI/media/artwork-wallpapers",
+    "image": "https://cms.gta6state.com/api/media/file/gta-6-official-4k-jason-lucia-01-1600x900.webp"
+  },
+  {
+    "tag": "OFICIAL",
+    "title": "Galeria oficial de GTA 6 chega a 99 capturas de tela",
+    "text": "A galeria oficial da Rockstar reúne 99 imagens de GTA VI, incluindo Jason, Lucia, Vice City e outras regiões de Leonida.",
+    "source": "Rockstar Games",
+    "date": "2026-09-08",
+    "link": "https://www.rockstargames.com/VI/media/screenshots",
+    "image": "https://cms.gta6state.com/api/media/file/gta-6-official-4k-lucia-caminos-07.webp"
+  },
+  {
+    "tag": "OFICIAL",
+    "title": "Rockstar apresenta GTA 6: The Album",
+    "text": "A Rockstar anunciou Grand Theft Auto VI: The Album em setembro de 2026, com lançamento previsto para 19 de novembro junto do jogo.",
+    "source": "Rockstar Games",
+    "date": "2026-09-17",
+    "link": "https://www.rockstargames.com/VI",
+    "image": "https://cms.gta6state.com/api/media/file/gta-6-official-4k-jason-lucia-01-1600x900.webp"
   }
 ]
