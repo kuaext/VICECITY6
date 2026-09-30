@@ -1,0 +1,85 @@
+name: Atualizar notícias GTA 6
+
+on:
+  schedule:
+    - cron: "17 */3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  atualizar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar site
+        uses: actions/checkout@v4
+
+      - name: Buscar notícias
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const https = require('https');
+
+            function get(url) {
+              return new Promise((resolve, reject) => {
+                https.get(url, {headers:{'User-Agent':'GTA6-Noticias/1.0'}}, res => {
+                  let data='';
+                  res.on('data', c => data += c);
+                  res.on('end', () => resolve(data));
+                }).on('error', reject);
+              });
+            }
+
+            function clean(s='') {
+              return s.replace(/<!\[CDATA\[/g,'').replace(/\]\]>/g,'')
+                .replace(/<[^>]+>/g,' ').replace(/&amp;/g,'&')
+                .replace(/&quot;/g,'"').replace(/&#39;/g,"'")
+                .replace(/&apos;/g,"'").replace(/&lt;/g,'<')
+                .replace(/&gt;/g,'>').replace(/\\s+/g,' ').trim();
+            }
+
+            const url = 'https://news.google.com/rss/search?q=GTA%206%20when%3A7d&hl=pt-BR&gl=BR&ceid=BR%3Apt-419';
+            const xml = await get(url);
+            const items = [...xml.matchAll(/<item>([\\s\\S]*?)<\\/item>/g)].map(m => m[1]);
+
+            const news = items.map(item => {
+              const title = clean((item.match(/<title>([\\s\\S]*?)<\\/title>/)||[])[1] || '');
+              const link = clean((item.match(/<link>([\\s\\S]*?)<\\/link>/)||[])[1] || '');
+              const pubDate = clean((item.match(/<pubDate>([\\s\\S]*?)<\\/pubDate>/)||[])[1] || '');
+              const source = clean((item.match(/<source[^>]*>([\\s\\S]*?)<\\/source>/)||[])[1] || 'Google News');
+              if (!title || !link) return null;
+
+              const t = title.toLowerCase();
+              let tag = 'NOVIDADE';
+              if (t.includes('rockstar') || t.includes('oficial') || t.includes('confirm')) tag = 'OFICIAL';
+              if (t.includes('rumor') || t.includes('suposto') || t.includes('vazamento') || t.includes('leak')) tag = 'RUMOR';
+
+              return {
+                tag, title,
+                text: 'Notícia encontrada automaticamente. Abra a fonte para ler a matéria completa e conferir os detalhes.',
+                source,
+                date: pubDate,
+                link
+              };
+            }).filter(Boolean);
+
+            const old = JSON.parse(fs.readFileSync('data/news.json','utf8'));
+            const combined = [...news, ...old];
+            const seen = new Set();
+            const unique = combined.filter(n => {
+              const key = (n.title || '').toLowerCase().replace(/\\W/g,'');
+              if (!key || seen.has(key)) return false;
+              seen.add(key); return true;
+            }).slice(0, 30);
+
+            fs.writeFileSync('data/news.json', JSON.stringify(unique, null, 2));
+
+      - name: Atualizar site
+        run: |
+          git config user.name "GTA 6 Notícias Bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/news.json
+          git diff --cached --quiet || git commit -m "Atualizar notícias automaticamente"
+          git push
